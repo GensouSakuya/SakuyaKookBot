@@ -2,13 +2,14 @@
 using GensouSakuya.KookBot.App.Interfaces;
 using GensouSakuya.KookBot.App.Models;
 using GensouSakuya.KookBot.App.Models.Enum;
+using Microsoft.Extensions.Logging;
 
 namespace GensouSakuya.KookBot.App.Handlers
 {
     [CommandTrigger("null")]
     internal class NullHandler : BaseHandler
     {
-        public NullHandler(IKookService kookService) : base(kookService)
+        public NullHandler(IKookService kookService, ILogger logger) : base(kookService, logger)
         {
         }
 

@@ -9,10 +9,14 @@ namespace GensouSakuya.KookBot.App
     {
         readonly ILogger _logger;
         readonly IKookService _kookService;
+        readonly IDataService _dataService;
         readonly HandlerEngine _engine;
-        public HandlerCenter(IKookService kookService, ILogger<HandlerCenter> logger, HandlerEngine engine) 
+        readonly ILoggerFactory _loggerFactory;
+        public HandlerCenter(IKookService kookService, IDataService dataService, ILogger<HandlerCenter> logger, ILoggerFactory loggerFactory, HandlerEngine engine) 
         {
             _kookService = kookService;
+            _dataService = dataService;
+            _loggerFactory = loggerFactory;
             _logger = logger;
             _engine = engine;
             _kookService.MessageReceived += InternalKookMessageReceived;
@@ -20,9 +24,7 @@ namespace GensouSakuya.KookBot.App
 
         private async Task InternalKookMessageReceived(string? message, Models.Enum.EnumKookMessageSource arg2, Models.BaseKookUser arg3, Models.BaseKookChannel arg4)
         {
-            var command = message?.Trim().Split(" ", StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
-
-            if(command!=null && (command.StartsWith(".") || command.StartsWith("/")))
+            if(message != null && (message.StartsWith(".") || message.StartsWith("/")))
             {
                 await _engine.ExecuteCommandAsync(arg2, message, arg3, arg4);
             }
@@ -35,10 +37,9 @@ namespace GensouSakuya.KookBot.App
         public void ReloadHandlers()
         {
             _logger.LogDebug("ReloadHandlers");
-            //只能拿到直接继承的派生类，有需要的时候再改
             var handlerTypes = Assembly.GetExecutingAssembly().GetTypes()
-                .Where(p => p.BaseType == typeof(BaseHandler) && !p.IsAbstract).ToList();
-            _logger.LogDebug($"found {handlerTypes.Count} handlers");
+                .Where(p => p.IsSubclassOf(typeof(BaseHandler)) && !p.IsAbstract).ToList();
+            _logger.LogDebug("found {Count} handlers", handlerTypes.Count);
 
             var allHandlers = handlerTypes.Select(p => new
             {
@@ -51,13 +52,38 @@ namespace GensouSakuya.KookBot.App
 
             _engine.SetFlowHandlers(flowHandlers.Select(p =>
             {
-                return (BaseHandler)Activator.CreateInstance(p.Type, new[] { _kookService })!;
+                return CreateInstance(p.Type);
             }).ToList());
 
-            _engine.SetCommandHandlers(commandHandlers.Select(p =>
+            var commanderHandlerGroup = commandHandlers.Select(p =>
             {
-                return (BaseHandler)Activator.CreateInstance(p.Type, new[] { _kookService })!;
-            }).ToList());
+                return new
+                {
+                    Commands = p.CommandList.Select(q => q.Command),
+                    Handler = CreateInstance(p.Type)
+            };
+            });
+            var commandDic = new Dictionary<string, BaseHandler>();
+            foreach (var handler in commanderHandlerGroup)
+            {
+                foreach(var command in handler.Commands)
+                {
+                    commandDic[command] = handler.Handler;
+                }
+            }
+            _engine.SetCommandHandlers(commandDic);
+        }
+
+        private BaseHandler CreateInstance(Type type)
+        {
+            var logger = _loggerFactory.CreateLogger(type.Name);
+            if (type.BaseType == null)
+                return null;
+            if (type.BaseType == typeof(BaseHandler))
+                return (BaseHandler)Activator.CreateInstance(type, new object[] { _kookService, logger })!;
+            else if (type.BaseType.IsGenericType && type.BaseType?.GetGenericTypeDefinition() == typeof(BaseDataHandler<>))
+                return (BaseHandler)Activator.CreateInstance(type, new object[] { _dataService, _kookService, logger })!;
+            return null;
         }
     }
 }

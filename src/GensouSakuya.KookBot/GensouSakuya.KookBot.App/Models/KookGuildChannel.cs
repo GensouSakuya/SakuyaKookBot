@@ -9,4 +9,12 @@
             Id = id;
         }
     }
+
+    internal static class KookGuildChannelExtension
+    {
+        public static KookGuildChannel ToGuildChannel(this BaseKookChannel kc)
+        {
+            return (KookGuildChannel)kc;
+        }
+    }
 }

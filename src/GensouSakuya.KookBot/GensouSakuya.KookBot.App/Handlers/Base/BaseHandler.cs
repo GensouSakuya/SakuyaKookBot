@@ -8,9 +8,11 @@ namespace GensouSakuya.KookBot.App.Handlers.Base
     internal abstract class BaseHandler
     {
         readonly IKookService _kookService;
-        public BaseHandler(IKookService kookService) 
+        protected ILogger Logger;
+        public BaseHandler(IKookService kookService, ILogger logger) 
         {
             _kookService = kookService;
+            Logger = logger;
         }
 
         public abstract Task<bool> Check(EnumKookMessageSource source, string? originMessage, BaseKookUser sendBy, BaseKookChannel sendFrom);
@@ -36,6 +38,41 @@ namespace GensouSakuya.KookBot.App.Handlers.Base
             }
             return Task.CompletedTask;
         }
+
+        protected List<string> MessageToCommand(string? originMessage)
+        {
+            if (string.IsNullOrWhiteSpace(originMessage))
+                return Enumerable.Empty<string>().ToList();
+            return originMessage.Split(" ", StringSplitOptions.RemoveEmptyEntries).ToList();
+        }
+    }
+
+    internal abstract class BaseDataHandler<T> : BaseHandler where T:new()
+    {
+        readonly IDataService _dataService;
+
+        protected BaseDataHandler(IDataService dataService, IKookService kookService, ILogger logger) : base(kookService, logger)
+        {
+            _dataService = dataService;
+        }
+
+        protected T GetData()
+        {
+            var keyName = this.GetType().Name;
+            var data = _dataService.Get<T>(keyName);
+            if(data == null)
+            {
+                data = new T();
+                _dataService.Save(keyName, data, false);
+            }
+            return data;
+        }
+
+        protected void SaveData(T data, bool immediately = true)
+        {
+            var keyName = this.GetType().Name;
+            _dataService.Save(keyName, data, immediately);
+        }
     }
 
     internal class HandlerEngine
@@ -47,10 +84,10 @@ namespace GensouSakuya.KookBot.App.Handlers.Base
             _logger = logger;
         }
 
-        public List<BaseHandler>? CommandHandlers { get; private set; }
+        public Dictionary<string, BaseHandler>? CommandHandlers { get; private set; }
         public List<BaseHandler>? FlowHandlers { get; private set; }
 
-        public void SetCommandHandlers(List<BaseHandler> handlers)
+        public void SetCommandHandlers(Dictionary<string, BaseHandler> handlers)
         {
             CommandHandlers = handlers;
         }
@@ -60,25 +97,47 @@ namespace GensouSakuya.KookBot.App.Handlers.Base
             FlowHandlers = handlers;
         }
 
-        public Task<bool> ExecuteCommandAsync(EnumKookMessageSource source, string? originMessage, BaseKookUser sendBy, BaseKookChannel sendFrom)
-        {
-            return ExecuteAsync(CommandHandlers, source, originMessage, sendBy, sendFrom);
-        }
-
-        public Task<bool> ExecuteFlowAsync(EnumKookMessageSource source, string? originMessage, BaseKookUser sendBy, BaseKookChannel sendFrom)
-        {
-            return ExecuteAsync(FlowHandlers,source, originMessage,sendBy, sendFrom);
-        }
-
-        private async Task<bool> ExecuteAsync(List<BaseHandler>? handlers, EnumKookMessageSource source, string? originMessage, BaseKookUser sendBy, BaseKookChannel sendFrom)
+        public async Task<bool> ExecuteCommandAsync(EnumKookMessageSource source, string? originMessage, BaseKookUser sendBy, BaseKookChannel sendFrom)
         {
             var handled = false;
             try
             {
-                if (handlers == null)
+                if (CommandHandlers == null)
                     return handled;
 
-                foreach (var commander in handlers)
+                var command = originMessage?.Split(" ", StringSplitOptions.RemoveEmptyEntries).FirstOrDefault()?.Substring(1);
+
+                if(!string.IsNullOrWhiteSpace(command) && CommandHandlers.ContainsKey(command))
+                {
+                    var commandHandler = CommandHandlers[command];
+
+                    if (!await commandHandler.Check(source, originMessage, sendBy, sendFrom))
+                        return handled;
+
+                    await commandHandler.NextAsync(source, originMessage, sendBy, sendFrom);
+                    if (commandHandler.IsHandled)
+                    {
+                        handled = true;
+                    }
+                }
+                return handled;
+            }
+            catch (Exception e)
+            {
+                _logger.LogError(e, "execute command message error");
+                return handled;
+            }
+        }
+
+        public async Task<bool> ExecuteFlowAsync(EnumKookMessageSource source, string? originMessage, BaseKookUser sendBy, BaseKookChannel sendFrom)
+        {
+            var handled = false;
+            try
+            {
+                if (FlowHandlers == null)
+                    return handled;
+
+                foreach (var commander in FlowHandlers)
                 {
                     if (!await commander.Check(source, originMessage, sendBy, sendFrom))
                         continue;
@@ -95,7 +154,7 @@ namespace GensouSakuya.KookBot.App.Handlers.Base
             }
             catch (Exception e)
             {
-                _logger.LogError(e, "execute message error");
+                _logger.LogError(e, "execute flow message error");
                 return handled;
             }
         }

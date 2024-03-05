@@ -1,6 +1,6 @@
 ﻿using GensouSakuya.KookBot.App.Handlers.Base;
 using GensouSakuya.KookBot.App.Interfaces;
-using GensouSakuya.KookBot.App.Services.KookService;
+using GensouSakuya.KookBot.App.Services;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Serilog;
@@ -15,6 +15,7 @@ class Program
         HostApplicationBuilder builder = Host.CreateApplicationBuilder(args);
 
         builder.Services.AddSingleton<IConfigService, ConfigService>();
+        builder.Services.AddSingleton<IDataService, DataService>();
         builder.Services.AddSingleton<IKookService, KookService>();
         builder.Services.AddSingleton<HandlerEngine>();
         builder.Services.AddSingleton<HandlerCenter>();

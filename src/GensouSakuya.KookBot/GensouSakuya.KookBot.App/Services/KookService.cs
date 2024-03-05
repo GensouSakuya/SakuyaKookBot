@@ -6,7 +6,7 @@ using Kook.Rest;
 using Kook.WebSocket;
 using Microsoft.Extensions.Logging;
 
-namespace GensouSakuya.KookBot.App.Services.KookService
+namespace GensouSakuya.KookBot.App.Services
 {
     internal class KookService : IKookService
     {
@@ -30,8 +30,8 @@ namespace GensouSakuya.KookBot.App.Services.KookService
         public async Task LoginAsync()
         {
             var token = _configService.Get<string>("token");
-            await _restClient.LoginAsync(Kook.TokenType.Bot, token);
-            await _socketClient.LoginAsync(Kook.TokenType.Bot, token);
+            await _restClient.LoginAsync(TokenType.Bot, token);
+            await _socketClient.LoginAsync(TokenType.Bot, token);
         }
 
         public Task StartAsync()
