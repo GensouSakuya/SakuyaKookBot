@@ -26,6 +26,7 @@ namespace GensouSakuya.KookBot.App.BackgroundWorkers
             Task.Run(() => LoopCheck(_cancellationTokenSource.Token));
         }
 
+        //正则参考rsshub：https://github.com/DIYgod/RSSHub/blob/master/lib/routes/weibo/utils.ts
         static Regex _faceRegex = new Regex("<span class=[\"']url-icon[\"']><img\\s[^>]*?alt=[\"']?([^>]+?)[\"']?\\s[^>]*?\\/?><\\/span>");
         static Regex _newLineRegex = new Regex("<br\\s/>");
         static Regex _fullTextRegex = new Regex("<a href=\"(.*?)\">全文<\\/a>");
