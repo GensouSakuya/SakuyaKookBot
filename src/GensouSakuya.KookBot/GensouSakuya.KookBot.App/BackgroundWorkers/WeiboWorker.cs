@@ -1,6 +1,5 @@
 ﻿using GensouSakuya.KookBot.App.Handlers;
 using GensouSakuya.KookBot.App.Interfaces;
-using Kook;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json.Linq;
 using RestSharp;
@@ -30,6 +29,7 @@ namespace GensouSakuya.KookBot.App.BackgroundWorkers
         static Regex _faceRegex = new Regex("<span class=[\"']url-icon[\"']><img\\s[^>]*?alt=[\"']?([^>]+?)[\"']?\\s[^>]*?\\/?><\\/span>");
         static Regex _newLineRegex = new Regex("<br\\s/>");
         static Regex _fullTextRegex = new Regex("<a href=\"(.*?)\">全文<\\/a>");
+        static Regex _repostRegex = new Regex("<a href='\\/n\\/(.*?)'>(.*?)<\\/a>");
         private static TaskCompletionSource<bool> _completionSource = new TaskCompletionSource<bool>();
         private ConcurrentDictionary<string, string> _lastWeiboId;
         private async Task LoopCheck(CancellationToken token)
@@ -94,6 +94,8 @@ namespace GensouSakuya.KookBot.App.BackgroundWorkers
                                 var newest = weibos[0];
                                 var id = newest["mblog"]["id"].ToString();
                                 var text = newest["mblog"]["text"].ToString();
+                                var images = newest["mblog"]["pic_ids"].ToArray();
+                                var retweeted = newest["mblog"]["retweeted_status"];
                                 if (!_lastWeiboId.ContainsKey(room.Key))
                                 {
                                     _lastWeiboId[room.Key] = id;
@@ -107,11 +109,32 @@ namespace GensouSakuya.KookBot.App.BackgroundWorkers
                                 _lastWeiboId[room.Key] = id;
                                 _logger.LogInformation("weibo[{0}] start sending notice", room.Key);
 
+                                var isRepost = retweeted != null;
                                 text = _faceRegex.Replace(text, "$1");
                                 text = _newLineRegex.Replace(text, Environment.NewLine);
                                 text = _fullTextRegex.Replace(text, "[完整内容见原微博](https://m.weibo.cn$1)");
+                                text = _repostRegex.Replace(text, "$2");
 
-                                string msg = $"【{name}】发布了微博：{Environment.NewLine}{text}";
+                                if(images?.Any()?? false)
+                                {
+                                    for(var index =0;index < images.Length;index++)
+                                    {
+                                        var image = images[index];
+                                        text += $"{Environment.NewLine}[配图{index+1}](https://image.baidu.com/search/down?url=https://wx1.sinaimg.cn/large/{image}.jpg)";
+                                    }
+                                }
+
+                                var msgBody = $"{Environment.NewLine}{text}";
+
+                                var msg = "";
+                                if (!isRepost)
+                                {
+                                    msg = $"【{name}】发布了微博：{msgBody}";
+                                }
+                                else
+                                {
+                                    msg = $"【{name}】转发了微博：{msgBody}{Environment.NewLine}原微博：{Environment.NewLine}@{retweeted["user"]["screen_name"]}：{retweeted["text"]}";
+                                }
 
                                 foreach (var sor in room.Value)
                                 {
