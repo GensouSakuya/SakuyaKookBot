@@ -19,7 +19,7 @@ namespace GensouSakuya.KookBot.App.BackgroundWorkers
         {
             _kookService = kookService;
             _logger = logger;
-            _lastWeiboId = new ConcurrentDictionary<string, string>();
+            _lastWeiboId = new ConcurrentDictionary<string, ConcurrentQueue<string>>();
             _cancellationTokenSource = new CancellationTokenSource();
             _getSubscribeData = getSubscribeData;
             Task.Run(() => LoopCheck(_cancellationTokenSource.Token));
@@ -31,7 +31,7 @@ namespace GensouSakuya.KookBot.App.BackgroundWorkers
         static Regex _fullTextRegex = new Regex("<a href=\"(.*?)\">全文<\\/a>");
         static Regex _repostRegex = new Regex("<a href='\\/n\\/(.*?)'>(.*?)<\\/a>");
         private static TaskCompletionSource<bool> _completionSource = new TaskCompletionSource<bool>();
-        private ConcurrentDictionary<string, string> _lastWeiboId;
+        private ConcurrentDictionary<string, ConcurrentQueue<string>> _lastWeiboId;
         private async Task LoopCheck(CancellationToken token)
         {
             try
@@ -58,16 +58,6 @@ namespace GensouSakuya.KookBot.App.BackgroundWorkers
                     };
                     using (var client = new RestClient(option))
                     {
-                        //try
-                        //{
-                        //    client.AddDefaultHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36 Edg/119.0.0.0");
-                        //    //set cookie
-                        //    homeres = await client.GetAsync(new RestRequest("https://live.douyin.com"));
-                        //}
-                        //catch (Exception e)
-                        //{
-                        //    _logger.LogError(e, "douyin refresh cookies error");
-                        //}
                         var subscribers = _getSubscribeData();
                         foreach (var room in subscribers)
                         {
@@ -91,22 +81,46 @@ namespace GensouSakuya.KookBot.App.BackgroundWorkers
                                 content = res.Content;
                                 jobj = JObject.Parse(content);
                                 var weibos = jobj["data"]["cards"];
-                                var newest = weibos[0];
-                                var id = newest["mblog"]["id"].ToString();
-                                var text = newest["mblog"]["text"].ToString();
-                                var images = newest["mblog"]["pic_ids"].ToArray();
-                                var retweeted = newest["mblog"]["retweeted_status"];
-                                if (!_lastWeiboId.ContainsKey(room.Key))
+                                var isStart = false;
+                                var weiboQueue = _lastWeiboId.GetOrAdd(room.Key, p => {
+                                    isStart = true;
+                                    return new ConcurrentQueue<string>();
+                                });
+                                var targetIndex = -1;
+                                var targetWeiboId = "";
+                                for(var index = 0;index< weibos.Count();index++)
                                 {
-                                    _lastWeiboId[room.Key] = id;
+                                    var weiboId = weibos[index]["mblog"]["id"].ToString();
+                                    if(isStart)
+                                    {
+                                        weiboQueue.Enqueue(weiboId);
+                                        continue;
+                                    }
+                                    if (weiboQueue.Contains(weiboId))
+                                    {
+                                        break;
+                                    }
+                                    targetIndex = index;
+                                    targetWeiboId = weiboId;
+                                }
+                                if(isStart)
+                                {
                                     continue;
                                 }
-                                else if (_lastWeiboId[room.Key] == id)
+                                if(targetIndex < 0)
                                 {
                                     continue;
                                 }
 
-                                _lastWeiboId[room.Key] = id;
+                                weiboQueue.Enqueue(targetWeiboId);
+                                if (weiboQueue.Count > 10)
+                                    weiboQueue.TryDequeue(out _);
+                                var newest = weibos[targetIndex];
+                                var id = newest["mblog"]["id"].ToString();
+                                var text = newest["mblog"]["text"].ToString();
+                                var images = newest["mblog"]["pic_ids"].ToArray();
+                                var retweeted = newest["mblog"]["retweeted_status"];
+
                                 _logger.LogInformation("weibo[{0}] start sending notice", room.Key);
 
                                 var isRepost = retweeted != null;
