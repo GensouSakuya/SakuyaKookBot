@@ -92,7 +92,21 @@ namespace GensouSakuya.KookBot.App.BackgroundWorkers
                                 }
                                 else
                                 {
-                                    isStreaming = true;
+                                    //拿不到data的时候额外再请求一次，以确保真的是在进行电台直播而非数据异常
+                                    _logger.LogInformation("data is empty, full response:{0}", content);
+                                    var res2 = await client.GetAsync(new RestRequest(url));
+                                    if (!res2.IsSuccessStatusCode)
+                                    {
+                                        _logger.LogError(res2.ErrorException, "get roominfo failed");
+                                        continue;
+                                    }
+                                    var content2 = res2.Content;
+                                    var jsonRes2 = Newtonsoft.Json.JsonConvert.DeserializeObject(content2);
+                                    var jobj2 = JObject.FromObject(jsonRes2);
+                                    if (!jobj["data"]["data"].HasValues)
+                                    {
+                                        isStreaming = true;
+                                    }
                                     type = StreamType.Radio;
                                 }
                                 if (isStreaming)
